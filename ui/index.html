@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sentiment API Demo</title>
+  <style>
+    :root { --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --muted: #94a3b8;
+            --pos: #22c55e; --neg: #ef4444; --accent: #38bdf8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+           background: var(--bg); color: var(--text);
+           display: flex; justify-content: center; padding: 40px 16px; }
+    .card { background: var(--card); border-radius: 16px; padding: 28px;
+            width: 100%; max-width: 620px; box-shadow: 0 10px 40px rgba(0,0,0,.4); }
+    h1 { margin: 0 0 4px; font-size: 1.5rem; }
+    p.sub { color: var(--muted); margin: 0 0 20px; font-size: .95rem; }
+    label { display: block; font-size: .8rem; color: var(--muted); margin: 12px 0 6px; }
+    input[type=text], textarea { width: 100%; background: #0b1220; color: var(--text);
+      border: 1px solid #334155; border-radius: 8px; padding: 10px 12px; font-size: .95rem; }
+    textarea { min-height: 110px; resize: vertical; }
+    .row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+    button { background: var(--accent); color: #06283a; border: none; border-radius: 8px;
+             padding: 10px 18px; font-weight: 700; font-size: .95rem; cursor: pointer; }
+    button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+    button:disabled { opacity: .5; cursor: wait; }
+    #result { margin-top: 22px; display: none; }
+    .badge { display: inline-block; padding: 6px 14px; border-radius: 999px;
+             font-weight: 700; text-transform: capitalize; }
+    .badge.positive { background: rgba(34,197,94,.15); color: var(--pos); border: 1px solid var(--pos); }
+    .badge.negative { background: rgba(239,68,68,.15); color: var(--neg); border: 1px solid var(--neg); }
+    .bar-wrap { background: #0b1220; border-radius: 8px; height: 14px; margin-top: 12px; overflow: hidden; }
+    .bar { height: 100%; width: 0; border-radius: 8px; transition: width .4s ease; }
+    .bar.positive { background: var(--pos); }
+    .bar.negative { background: var(--neg); }
+    .conf { margin-top: 8px; color: var(--muted); font-size: .9rem; }
+    .probs { margin-top: 10px; font-size: .85rem; color: var(--muted); }
+    #error { margin-top: 14px; color: var(--neg); font-size: .9rem; display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Sentiment API Demo</h1>
+    <p class="sub">Type a product or movie review and get an instant positive / negative prediction with confidence.</p>
+
+    <label for="api">API base URL</label>
+    <input type="text" id="api" value="http://localhost:8000" />
+
+    <label for="text">Review text</label>
+    <textarea id="text" placeholder="e.g. The movie was fantastic, I loved every minute of it!"></textarea>
+
+    <div class="row">
+      <button id="go" onclick="predict()">Analyze sentiment</button>
+      <button class="ghost" onclick="fillSample(0)">Try a positive sample</button>
+      <button class="ghost" onclick="fillSample(1)">Try a negative sample</button>
+    </div>
+
+    <div id="error"></div>
+
+    <div id="result">
+      <span id="badge" class="badge"></span>
+      <div class="bar-wrap"><div id="bar" class="bar"></div></div>
+      <div id="conf" class="conf"></div>
+      <div id="probs" class="probs"></div>
+    </div>
+  </div>
+
+  <script>
+    const SAMPLES = [
+      "Absolutely loved it — brilliant acting, a clever story, and I was smiling the whole time.",
+      "Terrible. Boring plot, awful acting, and a complete waste of two hours."
+    ];
+    function fillSample(i) { document.getElementById("text").value = SAMPLES[i]; }
+
+    async function predict() {
+      const api = document.getElementById("api").value.replace(/\/$/, "");
+      const text = document.getElementById("text").value.trim();
+      const btn = document.getElementById("go");
+      const errBox = document.getElementById("error");
+      const resBox = document.getElementById("result");
+      errBox.style.display = "none"; resBox.style.display = "none";
+      if (!text) { showError("Please enter some text first."); return; }
+      btn.disabled = true;
+      try {
+        const res = await fetch(api + "/predict", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.detail || ("HTTP " + res.status));
+        }
+        const data = await res.json();
+        const badge = document.getElementById("badge");
+        badge.textContent = data.label;
+        badge.className = "badge " + data.label;
+        const bar = document.getElementById("bar");
+        bar.className = "bar " + data.label;
+        bar.style.width = (data.confidence * 100).toFixed(1) + "%";
+        document.getElementById("conf").textContent =
+          "Confidence: " + (data.confidence * 100).toFixed(1) + "%";
+        document.getElementById("probs").textContent =
+          "Probabilities — " + Object.entries(data.probabilities)
+            .map(([k, v]) => k + ": " + (v * 100).toFixed(1) + "%").join(" · ");
+        resBox.style.display = "block";
+      } catch (e) {
+        showError("Request failed: " + e.message +
+          " — is the API running at " + api + "?");
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    function showError(msg) {
+      const errBox = document.getElementById("error");
+      errBox.textContent = msg; errBox.style.display = "block";
+    }
+    document.getElementById("text").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) predict();
+    });
+  </script>
+</body>
+</html>
